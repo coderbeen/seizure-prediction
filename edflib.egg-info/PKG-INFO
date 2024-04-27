@@ -1,0 +1,13 @@
+Metadata-Version: 2.1
+Name: edflib
+Version: 0.1
+Summary: A Python package for working with EDF files of CHB-MIT dataset.
+Home-page: https://github.com/coderbeen/edflib
+Author: Ameer Drbeeni
+Author-email: ameerasady9@email.com
+Requires-Dist: pandas
+Requires-Dist: pandera
+Requires-Dist: numpy
+Requires-Dist: mne
+Requires-Dist: imbalanced-learn
+Requires-Dist: matplotlib

@@ -1,0 +1,49 @@
+{
+    "version": 1,
+    "disable_existing_loggers": false,
+    "formatters": {
+        "standard": {
+            "format": "%(name)s - %(levelname)s - %(message)s"
+        },
+        "log": {
+            "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        },
+        "json": {
+            "format": "{\"timestamp\": \"%(asctime)s\", \"logger\": \"%(name)s\", \"level\": \"%(levelname)s\", \"message\": \"%(message)s\"}"
+        }
+    },
+    "handlers": {
+        "stdout": {
+            "class": "logging.StreamHandler",
+            "level": "DEBUG",
+            "formatter": "standard",
+            "stream": "ext://sys.stdout"
+        },
+        "logfile": {
+            "class": "logging.FileHandler",
+            "level": "DEBUG",
+            "formatter": "log",
+            "filename": "logs/logfile.log",
+            "mode": "a"
+        },
+        "jsonfile": {
+            "class": "logging.FileHandler",
+            "level": "DEBUG",
+            "formatter": "json",
+            "filename": "logs/jsonfile.json",
+            "mode": "a"
+        }
+    },
+    "loggers": {
+        "edflib": {
+            "handlers": ["logfile", "jsonfile"],
+            "level": "DEBUG",
+            "propagate": true
+        },
+        "model": {
+            "handlers": ["logfile", "jsonfile"],
+            "level": "DEBUG",
+            "propagate": true
+        }
+    }
+}

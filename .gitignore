@@ -1,0 +1,28 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# Environments
+.env
+.venv
+.conda
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Ruff linter
+.ruff_cache
+
+# Other
+tests/
+data/
+notebooks/
+logs/
+keras-tuner/

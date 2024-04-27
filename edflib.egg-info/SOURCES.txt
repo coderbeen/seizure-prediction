@@ -1,0 +1,15 @@
+setup.py
+edflib/__init__.py
+edflib/_constants.py
+edflib/chbmit.py
+edflib/datastore.py
+edflib/epochs.py
+edflib/plot.py
+edflib/reader.py
+edflib/resampler.py
+edflib/summary.py
+edflib.egg-info/PKG-INFO
+edflib.egg-info/SOURCES.txt
+edflib.egg-info/dependency_links.txt
+edflib.egg-info/requires.txt
+edflib.egg-info/top_level.txt
