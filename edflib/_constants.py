@@ -64,7 +64,7 @@ EEG_CHANNELS_SEL: list[str] = [
     "P4-O2",
     "FP2-F8",
     "F8-T8",
-    "T8-P8-0",
+    "T8-P8",
     "P8-O2",
     "FZ-CZ",
     "CZ-PZ",

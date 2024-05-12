@@ -100,7 +100,7 @@ class Resampler:
         self._resampler = self.resampling_methods[strategy](**kwargs)
         logger.info(f"Initialized resampler: {self._resampler.__class__.__name__}")
 
-    def fit_resample(self, X, y):
+    def fit_resample(self, X, y, return_indices=False):
         """Fit the resampler to the data and return the resampled data."""
         self._validate_inputs_targets(X, y)
         X, shape = self._flatten_inputs(X)
@@ -108,6 +108,7 @@ class Resampler:
         X_info = f"input size: {inputs_size(X)} MB, class counts: {np.bincount(y)}"
         logger.info("Resampling data with %s", X_info)
         X, y = self._resampler.fit_resample(X, y)
+        indices = self._resampler.sample_indices_
         X_info = f"input size: {inputs_size(X)} MB, class counts: {np.bincount(y)}"
         logger.info("Resampling complete, %s", X_info)
 
@@ -118,9 +119,12 @@ class Resampler:
             logger.debug("Requiring further resampling, applying RandomUnderSampler")
             rus = RandomUnderSampler(random_state=0)
             X, y = rus.fit_resample(X, y)
+            indices = indices[self._resampler.sample_indices_]
             X_info = f"input size: {inputs_size(X)} MB, class counts: {np.bincount(y)}"
             logger.info("Resampling complete, %s", X_info)
 
+        if return_indices:
+            return indices
         X = self._restore_inputs_shape(X, shape)
         return X, y
 

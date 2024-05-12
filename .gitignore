@@ -22,6 +22,7 @@ venv.bak/
 
 # Other
 tests/
+build/
 data/
 notebooks/
 logs/

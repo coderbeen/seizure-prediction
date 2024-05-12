@@ -1,6 +1,9 @@
 """The edfds module contains the DataStore class, which is used to manage the EEG data for the model."""
 
+import math
 import logging
+from typing import Literal
+from functools import cached_property
 
 import numpy as np
 from numpy.typing import NDArray
@@ -32,12 +35,17 @@ class DataStore(Epochs):
             avoid post-ictal period.
         iid (int): Stands for 'Inter-Ictal Distance', the discarded period between seizures and
             inter-ictal class in minutes.
+        phop (float | "auto"): The length of the hop between preictal frames in seconds.
+        ihop (float | "auto"): The length of the hop between interictal frames in seconds.
+        max_overlap (float): The maximum overlap between preictal frames.
         resampling_strategy (str | None): The sampling strategy to use for the data.
 
     Attributes:
         seg (int): Length of the segmenting process in seconds.
         frame_shape (tuple[int, int]): The shape of the EEG signal frames.
         currnet_test_seizure (str): The current test seizure for indexing.
+        data (dict): A dictionary containing the EEG data for each seizure.
+        num_frames (dict): A dictionary containing the number of frames for each seizure.
     """
 
     def __init__(
@@ -48,16 +56,27 @@ class DataStore(Epochs):
         pil: int = 60,
         psl: int = 120,
         iid: int = 120,
+        phop: float | Literal["auto"] = "auto",
+        ihop: float | Literal["auto"] = "auto",
+        max_overlap: float = 0.5,
         resampling_strategy: None | RESAMPLING_STRATEGIES = "random_under_sampler",
-        resampling_kwargs: dict = None,
+        resampling_kwargs: dict = {},
+        reader_kwargs: dict = {},
     ):
         super().__init__(subjectdir, sph, pil, psl, iid)
-        self._seg = seg
-        self._resampler = None
-        self.set_resampling_strategy(resampling_strategy, **(resampling_kwargs or {}))
-        self._readfn = EdfReader(subjectdir)
-        self._index = 0
         logger.info("DataStore initialized at %s", subjectdir)
+
+        self._seg = seg
+        self._phop = self._parse_phop(phop, max_overlap)
+        self._ihop = self._parse_ihop(ihop)
+
+        self._resampler = None
+        self._set_resampling_strategy(resampling_strategy, **resampling_kwargs)
+
+        self._readfn = EdfReader(subjectdir, **reader_kwargs)
+        self._index = 0
+        self._data = dict()
+        self._data_len = dict()
 
     @property
     def seg(self):
@@ -66,20 +85,11 @@ class DataStore(Epochs):
     @seg.setter
     def seg(self, value: int):
         self._seg = value
+        self._data = None
 
     @property
     def resampler(self):
         return self._resampler
-
-    def set_resampling_strategy(self, strategy: RESAMPLING_STRATEGIES, **kwargs):
-        """Set the sampling strategy for the data."""
-        if strategy is None:
-            if kwargs != {}:
-                msg = "strategy is None, but additional keyword arguments are provided."
-                raise ValueError(msg)
-            self._resampler = None
-        else:
-            self._resampler = Resampler(strategy, **kwargs)
 
     @property
     def frame_shape(self):
@@ -89,17 +99,13 @@ class DataStore(Epochs):
     def currnet_test_seizure(self):
         return self.get_trainable_seizures()[self._index]
 
-    def __iter__(self):
-        return self
+    @property
+    def data(self):
+        return self._data
 
-    def __next__(self):
-        if self._index < len(self.get_trainable_seizures()):
-            seizure = self.currnet_test_seizure
-            self._index += 1
-            return seizure
-        else:
-            self._index = 0
-            raise StopIteration
+    @property
+    def num_frames(self):
+        return self._data_len
 
     def read_file(self, file: str, period: tuple[int, int] = None):
         """
@@ -116,10 +122,19 @@ class DataStore(Epochs):
             return self._readfn(file)
         return self._readfn(file, period)
 
-    def get_data(
-        self,
-        seizures: list[str] = None,
-    ) -> tuple[NDArray, NDArray]:
+    def load_data(self):
+        data = dict()
+        data_len = dict()
+        for seizure in self.get_trainable_seizures():
+            x, y = self.read_data(seizure)
+            if self.resampler is not None:
+                x, y = self.resampler.fit_resample(x, y)
+            data[seizure] = (x, y)
+            data_len[seizure] = len(y)
+        self._data = data
+        self._data_len = data_len
+
+    def read_data(self, seizures: list[str] = None) -> tuple[NDArray, NDArray]:
         """
         Retrieves EEG frames and their classes for the specified seizures.
 
@@ -144,8 +159,10 @@ class DataStore(Epochs):
         ifiles = self.get_epochs_table(_INTERICTAL, seizures)
 
         # Calculate the number of frames required to initialize the array
-        num_pframes = self._num_frames_in_files(pfiles)
-        num_iframes = self._num_frames_in_files(ifiles)
+        # Only use overlapping if preictal data is less than percentage of interictal data
+        num_pframes = self._num_frames_in_files(pfiles, hop=self._phop)
+        num_iframes = self._num_frames_in_files(ifiles, hop=self._ihop)
+
         num_frames = num_pframes + num_iframes
         num_channels = len(EEG_CHANNELS_SEL)
         frame_len = self.seg * self.sampling_rate
@@ -154,8 +171,8 @@ class DataStore(Epochs):
 
         logger.info("Retrieving %s frames for seizures: %s", num_frames, seizures)
 
-        plen = self._get_files_frames(x, pfiles, from_index=0)
-        ilen = self._get_files_frames(x, ifiles, from_index=plen)
+        plen = self._get_files_frames(x, pfiles, from_index=0, hop=self._phop)
+        ilen = self._get_files_frames(x, ifiles, from_index=plen, hop=self._ihop)
 
         if plen + ilen < num_frames:
             x = x[: plen + ilen]
@@ -166,10 +183,38 @@ class DataStore(Epochs):
         logger.info("Data retrieved, class counts =%s", np.bincount(y))
         return x, y
 
-    def get_train_data(
-        self,
-        test_seizure: str = None,
-    ) -> tuple[NDArray, NDArray]:
+    def get_data(self, seizures: list[str]):
+        """
+        Retrieves EEG frames and their classes for the specified seizures.
+
+        Args:
+            seizures (list[str]): A list of seizure names to retrieve data for.
+
+        Returns:
+            tuple[NDArray, NDArray]: A tuple containing the input data (x) and the corresponding labels (y).
+        """
+        if not isinstance(seizures, list):
+            seizures = [seizures]
+
+        if not self._data:
+            self.load_data()
+
+        num_frames = sum(self._data_len[seizure] for seizure in seizures)
+        shape = (num_frames, len(EEG_CHANNELS_SEL), self.seg * self.sampling_rate)
+        x = np.empty(shape, dtype=np.float32)
+        y = np.empty(num_frames, dtype=bool)
+
+        start = 0
+        for seizure in seizures:
+            xs, ys = self._data[seizure]
+            stop = start + len(ys)
+            x[start:stop] = xs
+            y[start:stop] = ys
+            start = stop
+
+        return x, y
+
+    def get_train_data(self, test_seizure: str = None) -> tuple[NDArray, NDArray]:
         """
         Retrieves the training EEG frames, which represents data for all seizures excluding `test_seizure` data.
 
@@ -193,17 +238,10 @@ class DataStore(Epochs):
         seizures = self.get_trainable_seizures()
         seizures.pop(seizures.index(test_seizure))
 
-        x, y = self.get_data(seizures)
-
-        if self.resampler is not None:
-            x, y = self.resampler.fit_resample(x, y)
-
-        return x, y
+        return self.get_data(seizures)
 
     def get_test_data(
-        self,
-        test_seizure: str = None,
-        resampled: bool = False,
+        self, test_seizure: str = None, resampled: bool = False
     ) -> tuple[NDArray, NDArray]:
         """
         Get test data for a given seizure `test_seizure`.
@@ -226,7 +264,10 @@ class DataStore(Epochs):
         else:
             self._validate_seizure(test_seizure)
 
-        x, y = self.get_data(test_seizure)
+        if self._resampler is not None:
+            x, y = self.read_data(test_seizure)
+        else:
+            x, y = self.get_data(test_seizure)
 
         if resampled:
             resampler = Resampler("random_under_sampler", random_state=999)
@@ -234,7 +275,7 @@ class DataStore(Epochs):
 
         return x, y
 
-    def _read_frames(self, file: str, period: tuple[int, int]):
+    def _read_frames(self, file: str, period: tuple[int, int], hop: int):
         """
         Reads and returns the segmented signal from the specified EDF file within the given period.
 
@@ -252,29 +293,34 @@ class DataStore(Epochs):
         # end time might be more than file length due to rounding of chb-mit times
         end -= 1
 
-        num_frames = (end - start) // self.seg
-        frame_len = self.seg
-        # modify 'start' to make period multiple of 'self.seg'
-        start += (end - start) % frame_len
+        frame_len = self.seg * self.sampling_rate
+        num_frames = (end - start) * self.sampling_rate // hop
+        # modify 'start' to make period multiple of 'stride'
         if num_frames == 0:
             return None
 
-        # load the signal, truncate, and segment by splitting
+        # truncate the signal from both ends to make it multiple of 'stride'
         signal = self._readfn(file, period=(start, end))
-        # truncate the signal to make it multiple of 'frame_len' * 'self.sampling_rate'
-        to_drop = signal.shape[1] % (frame_len * self.sampling_rate)
+        num_samples = signal.shape[1]
+        # last period must have a length of 'frame_len'
+        to_drop = (num_samples - frame_len) % hop
         if to_drop > 0:
-            signal = signal[:, :-(to_drop)]
-        signal = np.split(signal, num_frames, axis=1)
-        return np.array(signal)
+            signal = signal[:, to_drop:]
+        num_samples = signal.shape[1]
+        if num_samples < frame_len:
+            return None
 
-    def _get_files_frames(self, frames, files, from_index):
+        stop = num_samples - frame_len
+        splits = [signal[:, i : i + frame_len] for i in range(0, stop, hop)]
+        return np.array(splits)
+
+    def _get_files_frames(self, frames, files, from_index, hop):
         """
         Fill the frames array with the signal frames from the specified files starting from the specified index. Returns the number of frames added to the array.
         """
         start = from_index
         for _, (file, *period, _) in files.iterrows():
-            frame = self._read_frames(file, period)
+            frame = self._read_frames(file, period, hop)
             if frame is None:
                 continue
             num_frames = frame.shape[0]
@@ -282,14 +328,70 @@ class DataStore(Epochs):
             start = start + num_frames
         return start - from_index
 
-    def _num_frames_in_files(self, files):
+    def _num_frames_in_files(self, files, hop=None):
         """Calculate the number of frames in a given period."""
-        seg = self.seg
+        frame_len = self.seg * self.sampling_rate
+        if hop is None:
+            hop = frame_len
         num_frames = 0
         for _, (_, *period, _) in files.iterrows():
-            period_len = period[1] - period[0]
-            num_frames += period_len // seg
-        return num_frames
+            period_len = (period[1] - period[0]) * self.sampling_rate
+            num_frames += math.floor(period_len // hop)
+        return int(num_frames)
+
+    def _parse_phop(self, phop, max_overlap):
+        if phop == "auto":
+            frame_len = self.seg * self.sampling_rate
+            pfiles = self.get_epochs_table(_PREICTAL)
+            ifiles = self.get_epochs_table(_INTERICTAL)
+            num_pframes = self._num_frames_in_files(pfiles)
+            num_iframes = self._num_frames_in_files(ifiles)
+            if num_pframes < num_iframes:
+                hop = frame_len * (num_pframes / num_iframes)
+                lowest_hop = frame_len * (1 - max_overlap)
+                hop = max(hop, lowest_hop)
+            else:
+                hop = frame_len
+        elif isinstance(phop, (int, float)):
+            if phop > self.seg:
+                msg = f"phop must be less than or equal to {self.seg}."
+                raise ValueError(msg)
+            elif phop < 0:
+                msg = "phop must be greater than or equal to 0."
+                raise ValueError(msg)
+            hop = phop * self.sampling_rate
+        else:
+            msg = "phop must be an integer, float, or 'auto'."
+            raise ValueError(msg)
+
+        hop = int(hop)
+        logger.info("Preictal hop length set to %s", hop)
+        return hop
+
+    def _parse_ihop(self, ihop):
+        if ihop == "auto":
+            frame_len = self.seg * self.sampling_rate
+            seizures = self.get_trainable_seizures()
+            lowest_factor = 1e10
+            for seizure in seizures:
+                pfiles = self.get_epochs_table(_PREICTAL, [seizure])
+                ifiles = self.get_epochs_table(_INTERICTAL, [seizure])
+                num_pframes = self._num_frames_in_files(pfiles, hop=self._phop)
+                num_iframes = self._num_frames_in_files(ifiles)
+                lowest_factor = min(num_iframes / num_pframes, lowest_factor)
+            hop = frame_len * lowest_factor
+        elif isinstance(ihop, (int, float)):
+            if ihop < 0:
+                msg = "ihop must be greater than or equal to 0."
+                raise ValueError(msg)
+            hop = ihop * self.sampling_rate
+        else:
+            msg = "ihop must be an integer, float, or 'auto'."
+            raise ValueError(msg)
+
+        hop = int(hop)
+        logger.info("Interictal hop length set to %s", hop)
+        return hop
 
     def _validate_seizure(self, seizure):
         """Check if the seizure is in the epochs table."""
@@ -297,11 +399,33 @@ class DataStore(Epochs):
             msg = f"Seizure '{seizure}' not a trainable seizure."
             raise ValueError(msg)
 
+    def _set_resampling_strategy(self, strategy: RESAMPLING_STRATEGIES, **kwargs):
+        """Set the sampling strategy for the data."""
+        if strategy is None:
+            if kwargs != {}:
+                msg = "strategy is None, but additional keyword arguments are provided."
+                raise ValueError(msg)
+            self._resampler = None
+        else:
+            self._resampler = Resampler(strategy, **kwargs)
+
     def __repr__(self) -> str:
         return (
             f"DataStore(subject_id={self.sub_id} seg={self.seg}) "
             f"sph={self.sph} pil={self.pil} psl={self.psl} iid={self.iid}"
         )
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self._index < len(self.get_trainable_seizures()):
+            seizure = self.currnet_test_seizure
+            self._index += 1
+            return seizure
+        else:
+            self._index = 0
+            raise StopIteration
 
 
 class ContDataStore(ContEpochs):
@@ -364,6 +488,11 @@ class ContDataStore(ContEpochs):
         if period is None:
             return self._readfn(file)
         return self._readfn(file, period)
+
+    def load_data(self):
+        data = dict()
+        for seizure in self.get_trainable_seizures():
+            data[seizure] = self.get_data(seizure)
 
     def get_data(
         self,

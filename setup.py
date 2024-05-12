@@ -8,6 +8,8 @@ setup(
     author_email="ameerasady9@email.com",
     url="https://github.com/coderbeen/edflib",
     packages=["edflib"],
+    package_data={"edflib": ["logging_config.json"]},
+    include_package_data=True,
     install_requires=[
         "pandas",
         "pandera",

@@ -390,15 +390,18 @@ def summarize_cont(summary: Summary, pil: int = None, psl: int = None, iid: int 
                 ax.axvspan(0, end_time, color=PlotColors.pre)
 
 
-def summarize(summary: Summary, pil: int = None, psl: int = None, iid: int = None):
+def summarize(
+    summary: Summary, pil: int = None, psl: int = None, iid: int = None, figlabel=None
+):
     """Print the summary of the records classified into the four epileptic states."""
     records = summary.records.copy()
     row_len = records[ColNames.LEN].max()
     nrows = summary.num_records
 
     # initialize the figure
+    label = f" - {figlabel}" if figlabel is not None else ""
     fig = plt.figure(
-        "edflib Plotter",
+        f"edflib Plotter{label}",
         figsize=(16, nrows * 0.3),
         layout="constrained",
     )
@@ -408,7 +411,6 @@ def summarize(summary: Summary, pil: int = None, psl: int = None, iid: int = Non
     for row in range(nrows):
         ax = plt.subplot(nrows, 1, row + 1)
         ax.set_facecolor(PlotColors.backg)
-        print(records.at[row, ColNames.FILE])
         ax.set_yticks([0], [records.at[row, ColNames.FILE]])
         ax.set_ylim(-0.1, 0.1)
         ax.set_xticks(np.arange(0, row_len, _SECONDS_IN_MINUTE * 6), [])

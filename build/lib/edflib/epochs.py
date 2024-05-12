@@ -1,5 +1,6 @@
 from functools import cached_property
 from typing import get_args
+from math import ceil
 
 import pandas as pd
 
@@ -20,6 +21,24 @@ def _evenly_divide_interictal_epochs(epochs: pd.DataFrame):
     segments = list()
     ii_epochs = epochs.xs(_INTERICTAL, level=1, drop_level=True)
     num_ii_files = len(ii_epochs)
+
+    if num_ii_files < num_pi_seizures:
+        new_ii_epochs = list()
+        multiplier = ceil(num_pi_seizures / num_ii_files)
+        for _, (file, start, end, length) in ii_epochs.iterrows():
+            new_len = length // multiplier
+            for _ in range(multiplier):
+                new_ii_epochs.append(
+                    {
+                        ColNames.FILE: file,
+                        ColNames.START: start,
+                        ColNames.END: start + new_len,
+                        ColNames.LEN: new_len,
+                    }
+                )
+                start += new_len
+        ii_epochs = pd.DataFrame(new_ii_epochs).sample(frac=1)
+        num_ii_files = len(ii_epochs)
 
     pi_idx = 0
 

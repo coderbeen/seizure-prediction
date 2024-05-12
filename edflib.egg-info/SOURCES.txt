@@ -4,6 +4,7 @@ edflib/_constants.py
 edflib/chbmit.py
 edflib/datastore.py
 edflib/epochs.py
+edflib/logging_config.json
 edflib/plot.py
 edflib/reader.py
 edflib/resampler.py

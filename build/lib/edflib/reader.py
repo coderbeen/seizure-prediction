@@ -18,16 +18,16 @@ class EdfReader:
         sdir (str): The subject directory path.
     """
 
-    def __init__(self, sdir: str):
+    def __init__(self, sdir: str, ch_names=EEG_CHANNELS_SEL, scale=None):
         self._validate_sdir(sdir)
         self.sdir = sdir
+        self.ch_names = ch_names
+        self.scale = scale
 
     def __call__(
         self,
         edf_fname: str,
         period: tuple[int, int] = None,
-        ch_names: list[str] = EEG_CHANNELS_SEL,
-        scale: Literal["mean", "median"] = None,
     ) -> NDArray:
         """
         Method for reading the signals in the EDF file.
@@ -52,9 +52,16 @@ class EdfReader:
         edf_fpath = os.path.join(self.sdir, edf_fname)
         with read_raw_edf(edf_fpath, verbose=verbose) as raw:
 
-            if ch_names is not None:
-                raw = raw.pick(picks=EEG_CHANNELS_SEL)
-                raw = raw.rename_channels({"T8-P8-0": "T8-P8"})
+            if self.ch_names is not None:
+                # Some files has multiple channels named "T8-P8"
+                try:
+                    raw = raw.pick(picks=EEG_CHANNELS_SEL)
+                except ValueError:
+                    eeg_channels = EEG_CHANNELS_SEL.copy()
+                    i = eeg_channels.index("T8-P8")
+                    eeg_channels[i] = "T8-P8-0"
+                    raw = raw.pick(picks=eeg_channels)
+                    raw = raw.rename_channels({"T8-P8-0": "T8-P8"})
 
             if period is not None:
                 self._validate_period(period)
@@ -67,8 +74,8 @@ class EdfReader:
 
             data = raw.get_data(verbose=verbose)
 
-            if scale is not None:
-                scaler = Scaler(scalings=scale)
+            if self.scale is not None:
+                scaler = Scaler(scalings=self.scale)
                 data = scaler.fit_transform(data)
                 data = data.squeeze()
         data = data.astype(np.float32).copy()
