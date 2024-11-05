@@ -35,10 +35,13 @@ class DataStore(Epochs):
             avoid post-ictal period.
         iid (int): Stands for 'Inter-Ictal Distance', the discarded period between seizures and
             inter-ictal class in minutes.
+        min_preictal (int): The minimum allowed preictal period for a seizure in minutes.
         phop (float | "auto"): The length of the hop between preictal frames in seconds.
         ihop (float | "auto"): The length of the hop between interictal frames in seconds.
         max_overlap (float): The maximum overlap between preictal frames.
         resampling_strategy (str | None): The sampling strategy to use for the data.
+        resampling_kwargs (dict): The keyword arguments to be passed to the resampling method.
+        reader_kwargs (dict): The keyword arguments to be passed to the EdfReader.
 
     Attributes:
         seg (int): Length of the segmenting process in seconds.
@@ -56,6 +59,7 @@ class DataStore(Epochs):
         pil: int = 60,
         psl: int = 120,
         iid: int = 120,
+        min_preictal: int = None,
         phop: float | Literal["auto"] = "auto",
         ihop: float | Literal["auto"] = "auto",
         max_overlap: float = 0.5,
@@ -63,7 +67,7 @@ class DataStore(Epochs):
         resampling_kwargs: dict = {},
         reader_kwargs: dict = {},
     ):
-        super().__init__(subjectdir, sph, pil, psl, iid)
+        super().__init__(subjectdir, sph, pil, psl, iid, min_preictal)
         logger.info("DataStore initialized at %s", subjectdir)
 
         self._seg = seg
@@ -296,7 +300,7 @@ class DataStore(Epochs):
         frame_len = self.seg * self.sampling_rate
         num_frames = (end - start) * self.sampling_rate // hop
         # modify 'start' to make period multiple of 'stride'
-        if num_frames == 0:
+        if num_frames <= 0:
             return None
 
         # truncate the signal from both ends to make it multiple of 'stride'
@@ -312,6 +316,8 @@ class DataStore(Epochs):
 
         stop = num_samples - frame_len
         splits = [signal[:, i : i + frame_len] for i in range(0, stop, hop)]
+        if len(splits) == 0:
+            return None
         return np.array(splits)
 
     def _get_files_frames(self, frames, files, from_index, hop):

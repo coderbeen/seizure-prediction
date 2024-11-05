@@ -21,7 +21,6 @@ venv.bak/
 .ruff_cache
 
 # Other
-tests/
 build/
 data/
 notebooks/

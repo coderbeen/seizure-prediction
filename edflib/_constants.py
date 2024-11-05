@@ -3,7 +3,7 @@ from typing import Literal, get_args
 
 # plot constants
 class PlotColors:
-    backg: str = "#edf2f4"
+    backg: str = "#FFFFFF"
     record: str = "#7EAA92"
     seiz: str = "#d90429"
     inter: str = "#40A2D8"
@@ -18,9 +18,11 @@ _RECT_TOP: int = 0.6
 _RECT_HEIGHT: int = _RECT_TOP - _RECT_BOTTOM
 _ANNOT_OFFSET: float = 0.2 * _RECT_HEIGHT
 _FLAG_OFFSET: float = 0.2 * _RECT_HEIGHT
-_LINE_WIDTH: float = 1.2
-_LARGE_FONT: int = 12
-_SMALL_FONT: int = 10
+_LINE_WIDTH: float = 1
+_LARGE_FONT: int = 16
+_SMALL_FONT: int = 14
+_AXIS_FONT: int = 18
+_LABEL_FONT: int = 24
 
 # dataset constants
 _SAMPLING_RATE: int = 256

@@ -71,8 +71,8 @@ def _extract_period(
     if include_last:
         last_idx = len(records) - 1
         last_name = records.at[last_idx, ColNames.FILE] + ".none"
-        last_start = records.at[last_idx, ColNames.END] + right
-        seizures.append([last_idx, last_name, last_start, 0])
+        last_start = records.at[last_idx, ColNames.LEN]
+        seizures.append([last_idx, last_name, last_start, last_start])
     # First period has no preceding seizure, adding margin to cancel out.
     start = records.at[0, ColNames.START] - left
     for seiz_idx, seiz_name, seiz_start, seiz_end in seizures:
@@ -84,16 +84,18 @@ def _extract_period(
             continue
         # Filter recordings based on allowed margin (current onset and last offset).
         group = _between_times(records, start, end, include_time)
-        start = records.at[seiz_idx, ColNames.START] + (seiz_end + left)
-
         if group is None:
+            start = records.at[seiz_idx, ColNames.START] + (seiz_end + left)
             continue
+
         # Reduce recordings times based on period length.
-        if length > 0:
+        if length > 0 and start < end - length:
             group = _between_times(records, end - length, end, include_time)
         if group is None:
+            start = records.at[seiz_idx, ColNames.START] + (seiz_end + left)
             continue
 
+        # Include the time distance between file and upcomming seizure.
         if include_time:
             seiz_time = records.at[seiz_idx, ColNames.START] + seiz_start
             if seiz_name.endswith(".none"):
@@ -101,9 +103,14 @@ def _extract_period(
             else:
                 group[ColNames.TIME] = seiz_time - group[ColNames.TIME]
 
+        # Add the seizure name to the group.
         group[ColNames.SEIZ] = seiz_name
         epochs = pd.concat([epochs, group])
 
+        # Update the start time for the next period.
+        start = records.at[seiz_idx, ColNames.START] + (seiz_end + left)
+
+    # Organize the columns and return the extracted epochs.
     if len(epochs) > 0:
         epochs[ColNames.LEN] = epochs[ColNames.END] - epochs[ColNames.START]
         cols = [

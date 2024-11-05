@@ -6,6 +6,7 @@ import pandas as pd
 
 from .summary import Summary
 from ._constants import ColNames, ICTAL_TYPES, _PREICTAL, _INTERICTAL
+from ._constants import _SECONDS_IN_MINUTE
 
 
 def _evenly_divide_interictal_epochs(epochs: pd.DataFrame):
@@ -156,11 +157,13 @@ class Epochs(Summary):
         pil: int,
         psl: int,
         iid: int,
+        min_preictal: int = None,
     ):
         self._sph = sph
         self._pil = pil
         self._psl = psl
         self._iid = iid
+        self._mpp = min_preictal
         super().__init__(sdir)
 
     @property
@@ -354,9 +357,8 @@ class Epochs(Summary):
         elif klass in get_args(ICTAL_TYPES):
             df = self.table.xs(klass, level=1, drop_level=True)
         else:
-            raise ValueError(
-                f"'klass' parameter must be 'None' or one of {get_args(ICTAL_TYPES)}"
-            )
+            msg = f"'klass' parameter must be 'None' or one of {get_args(ICTAL_TYPES)}"
+            raise ValueError(msg)
         return df.index.unique().tolist()
 
     def get_trainable_seizures(self):
@@ -375,6 +377,11 @@ class Epochs(Summary):
 
         pi_df = self.get_preictal_epochs(self.sph, self.pil, self.psl)
         pi_df[ColNames.CLASS] = _PREICTAL
+
+        if self._mpp is not None:
+            for _, group in pi_df.groupby(ColNames.SEIZ):
+                if group[ColNames.LEN].sum() < self._mpp * _SECONDS_IN_MINUTE:
+                    pi_df = pi_df.drop(group.index)
 
         df = (
             pd.concat([ii_df, pi_df])

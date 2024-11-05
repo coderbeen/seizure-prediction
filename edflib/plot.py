@@ -27,6 +27,8 @@ from ._constants import (
     _LINE_WIDTH,
     _LARGE_FONT,
     _SMALL_FONT,
+    _AXIS_FONT,
+    _LABEL_FONT,
 )
 
 
@@ -34,12 +36,12 @@ def _init_timeline_axes():
     """Initilize the figure and axes for the timeline plot."""
 
     # initialize the figure
-    fig = plt.figure("edflib Plotter", figsize=(24, 5), layout="constrained")
+    fig = plt.figure("edflib Plotter", figsize=(24, 6), layout="constrained")
 
     # initialize the axes
     ax = plt.subplot()
-    ax.set_title("Recordigs time information", loc="left", fontweight="bold")
-    ax.set(facecolor=PlotColors.backg, yticks=[], ylim=[-0.1, 1.8])
+    # ax.set_title("Recordigs time information", loc="left", fontweight="bold")
+    ax.set(facecolor=PlotColors.backg, yticks=[], ylim=[0, 1.8])
 
     # initialize the legends
     ax.legend(
@@ -53,12 +55,12 @@ def _init_timeline_axes():
                 linestyle="None",
                 marker="|",
                 markersize=10,
-                markeredgewidth=_LINE_WIDTH * 2,
+                markeredgewidth=_LINE_WIDTH * 3,
                 color=PlotColors.seiz,
             ),
         ],
         labels=["Excluded", _INTERICTAL, _PREICTAL, ColNames.SEIZ],
-        fontsize=_LARGE_FONT,
+        fontsize=_AXIS_FONT,
         ncol=4,
         loc="upper right",
     )
@@ -84,7 +86,7 @@ def _draw_flag(ax: Axes, x: int):
     arr = FancyArrowPatch(
         posA=(x, _RECT_BOTTOM - _FLAG_OFFSET),
         posB=(x, _RECT_TOP + _FLAG_OFFSET),
-        linewidth=_LINE_WIDTH,
+        linewidth=_LINE_WIDTH * 2,
         color=PlotColors.seiz,
     )
     ax.add_patch(arr)
@@ -235,9 +237,9 @@ def _set_timeaxis(ax: Axes, epochs: Epochs):
     minor_ticks = np.arange(start, end, _SECONDS_IN_HOUR)
     major_labels = np.arange(0, len_total / _SECONDS_IN_HOUR, 4, dtype=int)
 
-    ax.set_xlabel("time(h)")
+    ax.set_xlabel("Time (hours)", fontsize=_LABEL_FONT)
     ax.set_xlim(start - margin, end + margin)
-    ax.set_xticks(major_ticks, major_labels, fontsize=_SMALL_FONT)
+    ax.set_xticks(major_ticks, major_labels, fontsize=_AXIS_FONT)
     ax.set_xticks(minor_ticks, minor=True)
     ax.axhspan(_RECT_BOTTOM, _RECT_TOP, color=PlotColors.gap)
 
@@ -303,7 +305,7 @@ def summarize_cont(summary: Summary, pil: int = None, psl: int = None, iid: int 
     """Print the summary of the records classified into the four epileptic states."""
     records = summary.records.copy()
     total_len = summary.len_total
-    row_len = 1 * _SECONDS_IN_HOUR
+    row_len = 2 * _SECONDS_IN_HOUR
     nrows = total_len // row_len + 1
     beginning = records[ColNames.START].iloc[0]
     records[[ColNames.START, ColNames.END]] -= beginning
